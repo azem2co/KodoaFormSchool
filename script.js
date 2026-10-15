@@ -1,92 +1,185 @@
-// إعدادات المشروع: ضع روابط صفحات الجمعية، ثم رابط استقبال الإجابات عند تجهيز الربط.
+// إعدادات المشروع
 const CONFIG = {
-  facebookUrl: "https://www.facebook.com/QudwaAssoc/", // مثال: https://www.facebook.com/YourPage
-  instagramUrl: "https://www.instagram.com/qudwaassoc/", // مثال: https://www.instagram.com/YourPage
-  // SheetDB API المرتبط بجدول Google Sheets
+  facebookUrl: "https://www.facebook.com/QudwaAssoc/",
+  instagramUrl: "https://www.instagram.com/qudwaassoc/",
+  // SheetDB API المرتبط بجدول Google Sheets (لم يتغير)
   submitEndpoint: "https://sheetdb.io/api/v1/up8tahpqes5ri",
 };
 
+// الحقول المطلوبة في كل خطوة (أسماء الحقول مطابقة تماماً للنسخة السابقة
+// حتى تبقى أعمدة الجدول كما هي)
+const STEP_RULES = {
+  1: [
+    ["studentName", "يرجى كتابة اسم الطالب."],
+    ["grade", "يرجى كتابة الصف."],
+  ],
+  2: [
+    ["bestPart", "يرجى كتابة أفضل نشاط أو فقرة."],
+    ["bestReason", "أخبرنا لماذا اخترت هذا النشاط."],
+    ["worstPart", "يرجى كتابة النشاط الأقل إعجاباً."],
+    ["worstReason", "أخبرنا بما لم يناسبك أو بما يمكن تطويره."],
+  ],
+  3: [],
+};
+const TOTAL = 3;
+
+const body = document.body;
+const hero = document.getElementById("hero");
+const wizard = document.getElementById("wizard");
+const done = document.getElementById("done");
 const form = document.getElementById("surveyForm");
 const formMessage = document.getElementById("formMessage");
 const toast = document.getElementById("toast");
+const prevBtn = document.getElementById("prevBtn");
+const nextBtn = document.getElementById("nextBtn");
+const submitBtn = document.getElementById("submitBtn");
+const steps = [...form.querySelectorAll(".step")];
+const stepperItems = [...document.querySelectorAll("#stepper li")];
+const progressFill = document.getElementById("progressFill");
+const progressBar = document.getElementById("progress");
+const stepNow = document.getElementById("stepNow");
 
+let current = 1;
+let toastTimer;
+
+/* ---------- أدوات مساعدة ---------- */
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add("show");
-  window.setTimeout(() => toast.classList.remove("show"), 3200);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 3200);
 }
 
-function setSocialLink(selector, url) {
-  const link = document.querySelector(selector);
-  if (!link) return;
-  if (url && /^https:\/\/(www\.)?(facebook\.com|instagram\.com)\//i.test(url)) {
-    link.href = url;
-    link.classList.remove("is-disabled");
-  } else {
-    link.href = "#social";
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      showToast(
-        "أضف رابط الصفحة الحقيقي داخل CONFIG في ملف script.js قبل نشر الموقع.",
-      );
-    });
-  }
+function setView(view) {
+  body.dataset.view = view;
+  hero.hidden = view !== "hero";
+  wizard.hidden = view !== "form";
+  done.hidden = view !== "done";
 }
-setSocialLink('[data-social="facebook"]', CONFIG.facebookUrl);
-setSocialLink('[data-social="instagram"]', CONFIG.instagramUrl);
 
-function clearErrors() {
-  form
-    .querySelectorAll(".invalid")
-    .forEach((el) => el.classList.remove("invalid"));
-  form.querySelectorAll(".field-error").forEach((el) => {
-    el.textContent = "";
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function setSocialLinks() {
+  const map = { facebook: CONFIG.facebookUrl, instagram: CONFIG.instagramUrl };
+  document.querySelectorAll("[data-social]").forEach((link) => {
+    const url = map[link.dataset.social];
+    if (url && /^https:\/\/(www\.)?(facebook\.com|instagram\.com)\//i.test(url)) {
+      link.href = url;
+    } else {
+      link.removeAttribute("href");
+    }
   });
-  formMessage.hidden = true;
-  formMessage.className = "form-message";
+}
+setSocialLinks();
+
+/* ---------- التحقق ---------- */
+function clearError(control) {
+  control.classList.remove("invalid");
+  const parent = control.closest(".field, .choice-fieldset");
+  const error = parent && parent.querySelector(".field-error");
+  if (error) error.textContent = "";
 }
 
-function showFieldError(control, message) {
+function showError(control, message) {
   control.classList.add("invalid");
-  const parent = control.closest(".field, .question-block, .choice-fieldset");
-  const error = parent ? parent.querySelector(".field-error") : null;
+  const parent = control.closest(".field, .choice-fieldset");
+  const error = parent && parent.querySelector(".field-error");
   if (error) error.textContent = message;
 }
 
-function validateForm() {
-  clearErrors();
+function validateStep(n) {
+  formMessage.hidden = true;
   let firstInvalid = null;
-  const requiredFields = [
-    ["studentName", "اكتب اسم الطالب لو سمحت."],
-    ["grade", "اختار الصف لو سمحت."],
-    ["bestPart", "اختار أفضل فقرة."],
-    ["bestReason", "خبرنا ليش اخترت هالفقرة."],
-    ["worstPart", "اختار الفقرة الأقل تفضيلاً."],
-    ["worstReason", "خبرنا شو ما ناسبك أو شو ممكن نطوّر."],
-  ];
-  requiredFields.forEach(([name, message]) => {
+
+  (STEP_RULES[n] || []).forEach(([name, message]) => {
     const control = form.elements[name];
     if (control && !String(control.value || "").trim()) {
-      showFieldError(control, message);
-      firstInvalid ||= control;
+      showError(control, message);
+      firstInvalid = firstInvalid || control;
     }
   });
 
-  if (!form.querySelector('input[name="outsideInterest"]:checked')) {
-    const fieldset = form.querySelector(".choice-fieldset");
-    const error = fieldset.querySelector(".field-error");
-    error.textContent = "اختار الجواب الأقرب لرأيك.";
-    firstInvalid ||= fieldset.querySelector("input");
+  if (n === 3 && !form.querySelector('input[name="outsideInterest"]:checked')) {
+    const group = form.querySelector(".choice-fieldset");
+    group.querySelector(".field-error").textContent = "يرجى اختيار الإجابة الأقرب إلى رأيك.";
+    firstInvalid = firstInvalid || group.querySelector("input");
   }
+
   if (firstInvalid) {
     firstInvalid.focus({ preventScroll: true });
     firstInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
-    showToast("بقي كم حقل مطلوب؛ راجع الإجابات المعلّمة.");
+    showToast("يرجى إكمال الحقول المطلوبة قبل المتابعة.");
     return false;
   }
   return true;
 }
 
+/* ---------- التنقل بين الخطوات ---------- */
+function render(goingBack = false) {
+  steps.forEach((el) => {
+    const isCurrent = Number(el.dataset.step) === current;
+    el.classList.toggle("is-current", isCurrent);
+    el.classList.toggle("is-back", isCurrent && goingBack);
+  });
+
+  stepperItems.forEach((li, i) => {
+    const n = i + 1;
+    li.classList.toggle("is-active", n === current);
+    li.classList.toggle("is-done", n < current);
+    li.querySelector(".dot").innerHTML =
+      n < current ? '<svg><use href="#i-check" /></svg>' : String(n);
+  });
+
+  const pct = Math.round((current / TOTAL) * 100);
+  progressFill.style.width = pct + "%";
+  progressBar.setAttribute("aria-valuenow", String(pct));
+  stepNow.textContent = String(current);
+
+  prevBtn.hidden = current === 1;
+  nextBtn.hidden = current === TOTAL;
+  submitBtn.hidden = current !== TOTAL;
+}
+
+function goTo(n, goingBack = false) {
+  current = Math.min(Math.max(n, 1), TOTAL);
+  render(goingBack);
+  wizard.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+document.getElementById("startBtn").addEventListener("click", () => {
+  setView("form");
+  current = 1;
+  render();
+  scrollToTop();
+  setTimeout(() => form.elements.studentName.focus({ preventScroll: true }), 450);
+});
+
+nextBtn.addEventListener("click", () => {
+  if (validateStep(current)) goTo(current + 1);
+});
+prevBtn.addEventListener("click", () => goTo(current - 1, true));
+
+// زر Enter في حقول النص ينقل للخطوة التالية بدل الإرسال المبكر
+form.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.target.tagName === "TEXTAREA") return;
+  event.preventDefault();
+  if (current < TOTAL) {
+    nextBtn.click();
+  } else {
+    form.requestSubmit();
+  }
+});
+
+// إزالة رسالة الخطأ عند بدء التعديل
+form.querySelectorAll("input, textarea").forEach((control) => {
+  ["input", "change"].forEach((evt) =>
+    control.addEventListener(evt, () => clearError(control)),
+  );
+});
+
+/* ---------- الإرسال ---------- */
 function collectAnswers() {
   const data = Object.fromEntries(new FormData(form).entries());
   data.submittedAt = new Date().toISOString();
@@ -96,64 +189,61 @@ function collectAnswers() {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!validateForm()) return;
-  const submitButton = form.querySelector(".submit-button");
-  const buttonLabel = submitButton.querySelector("span");
-  const originalLabel = buttonLabel.textContent;
-  const answers = collectAnswers();
+  if (current !== TOTAL) return;
+  // تحقق نهائي من كل الخطوات
+  for (let n = 1; n <= TOTAL; n++) {
+    if (!validateStep(n)) {
+      if (n !== current) goTo(n, n < current);
+      return;
+    }
+  }
+
+  const label = submitBtn.querySelector("span");
+  const originalLabel = label.textContent;
 
   if (!CONFIG.submitEndpoint) {
     formMessage.hidden = false;
     formMessage.className = "form-message info";
     formMessage.textContent =
-      "التصميم جاهز، لكن استقبال الإجابات غير مفعّل بعد. لن تُرسل إجاباتك حالياً. على إدارة الموقع ربط النموذج بوجهة استقبال آمنة قبل مشاركته مع الطلاب.";
-    formMessage.scrollIntoView({ behavior: "smooth", block: "center" });
-    showToast("النموذج بحاجة لربط استقبال الإجابات قبل النشر.");
+      "استقبال الإجابات غير مفعّل بعد، ولن تُرسل إجاباتك حالياً. يرجى ربط النموذج بوجهة استقبال قبل مشاركته مع الطلاب.";
     return;
   }
 
   try {
-    submitButton.disabled = true;
-    buttonLabel.textContent = "عم نرسل إجاباتك...";
-    // SheetDB expects records wrapped in a "data" array.
+    submitBtn.disabled = true;
+    prevBtn.disabled = true;
+    label.textContent = "جارٍ إرسال إجاباتك...";
+
+    // SheetDB يتوقع السجلات داخل مصفوفة باسم "data"
     const response = await fetch(CONFIG.submitEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: [answers] }),
+      body: JSON.stringify({ data: [collectAnswers()] }),
     });
     if (!response.ok) {
       const details = await response.text().catch(() => "");
       throw new Error(`Submission failed (${response.status}) ${details}`);
     }
-    formMessage.hidden = false;
-    formMessage.className = "form-message success";
-    formMessage.textContent = "وصلت إجاباتك، شكراً لمشاركتك! 💙";
+
     form.reset();
-    formMessage.scrollIntoView({ behavior: "smooth", block: "center" });
+    current = 1;
+    render();
+    setView("done");
+    scrollToTop();
   } catch (error) {
+    console.error(error);
     formMessage.hidden = false;
     formMessage.className = "form-message info";
     formMessage.textContent =
-      "ما قدرنا نرسل الإجابات هالمرة. تأكد من الاتصال وحاول من جديد، أو تواصل مع فريق الجمعية.";
-    showToast("تعذّر الإرسال. جرّب مرة ثانية.");
+      "تعذّر إرسال الإجابات هذه المرة. تأكد من اتصالك بالإنترنت وحاول مجدداً، أو تواصل مع فريق الجمعية.";
+    showToast("تعذّر الإرسال، حاول مرة أخرى.");
   } finally {
-    submitButton.disabled = false;
-    buttonLabel.textContent = originalLabel;
+    submitBtn.disabled = false;
+    prevBtn.disabled = false;
+    label.textContent = originalLabel;
   }
 });
 
-// امسح رسالة الخطأ بمجرد أن يبدأ الطالب بتعديل الحقل.
-form.querySelectorAll("input, select, textarea").forEach((control) => {
-  control.addEventListener("input", () => {
-    control.classList.remove("invalid");
-    const parent = control.closest(".field, .question-block, .choice-fieldset");
-    const error = parent?.querySelector(".field-error");
-    if (error) error.textContent = "";
-  });
-  control.addEventListener("change", () => {
-    control.classList.remove("invalid");
-    const parent = control.closest(".field, .question-block, .choice-fieldset");
-    const error = parent?.querySelector(".field-error");
-    if (error) error.textContent = "";
-  });
-});
+// الحالة الابتدائية
+setView("hero");
+render();
